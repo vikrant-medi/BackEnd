@@ -20,6 +20,16 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Gradle Caching
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
 
       - name: make application.yml
         run: |
@@ -45,7 +55,7 @@ jobs:
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.HOST }} # EC2 인스턴스 퍼블릭 DNS
-          username: ec2-user
+          username: ubuntu
           key: ${{ secrets.PRIVATE_KEY }} # pem 키
           # 도커 작업
           script: |
