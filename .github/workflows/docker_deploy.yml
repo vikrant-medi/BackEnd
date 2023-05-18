@@ -1,65 +1,56 @@
-# github repository Actions 페이지에 나타낼 이름
-name: Docker Container CI/CD
+name: Java CI with Gradle
 
-# 트리거를 수행할 브랜치를 지정합니다.
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" , "dev" ]
 
-# 환경설정
-env:
-  DOCKER_IMAGE: ghcr.io/${{ github.actor }}/backend
-  VERSION: ${{ github.sha }}
-  NAME: vikrant-backend
+permissions:
+  contents: read
 
 jobs:
-  # 빌드 Job
   build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      # github repository에서 checkout
-      - uses: actions/checkout@v2
-      # docker build 수행
-      - name: Set up docker buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v1
-      - name: Cache docker layers
-        uses: actions/cache@v2
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ env.VERSION }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-      # GitHub 컨테이너 레지스트리에 로그인 후 빌드 & 푸시
-      - name: Login to ghcr
-        uses: docker/login-action@v1
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.VIKRANT_TOKEN }}
-      - name: Build and push
-        id: docker_build
-        uses: docker/build-push-action@v2
-        with:
-          builder: ${{ steps.buildx.outputs.name }}
-          push: true
-          tags: ${{ env.DOCKER_IMAGE }}:latest
 
-  # 배포 Job
-  deploy:
-    needs: build  # build 후에 실행되도록 정의
-    name: Deploy
-    runs-on: [ self-hosted, vikrant ] # AWS ./configure에서 사용할 label명
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Login to ghcr
-        uses: docker/login-action@v1
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.VIKRANT_TOKEN }}
-      # 3000 -> 80 포트로 수행하도록 지정
-      - name: Docker run
-        run: |
-          docker stop ${{ env.NAME }} && docker rm ${{ env.NAME }} && docker rmi ${{ env.DOCKER_IMAGE }}:latest
-          docker run -d -p 5001:5001 --name <Repository 이름> --restart always ${{ env.DOCKER_IMAGE }}:latest
+    - uses: actions/checkout@v3
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+
+    - name: make application-prod.yml
+      run: |
+        cd ./src/main/resources
+        touch ./application-prod.yml
+        echo "${{ secrets.APPLICATION }}" > ./application-prod.yml
+
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Build with Gradle
+      run: ./gradlew build -x test
+
+    - name: Docker build
+      run: |
+        docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+        docker build -t app .
+        docker tag app ${{ secrets.DOCKER_USERNAME }}/sejongmate:latest
+        docker push ${{ secrets.DOCKER_USERNAME }}/sejongmate:latest
+
+    - name: Deploy
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.HOST }} # EC2 인스턴스 퍼블릭 DNS
+        username: ec2-user
+        key: ${{ secrets.PRIVATE_KEY }} # pem 키
+        # 도커 작업
+        script: |
+          docker pull ${{ secrets.DOCKER_USERNAME }}/sejongmate:latest
+          docker stop $(docker ps -a -q)
+          docker run -d --log-driver=syslog -p 8080:8080 ${{ secrets.DOCKER_USERNAME }}/sejongmate:latest
+          docker rm $(docker ps --filter 'status=exited' -a -q)
+          docker image prune -a -f
