@@ -49,8 +49,8 @@ jobs:
           key: ${{ secrets.PRIVATE_KEY }} # pem 키
           # 도커 작업
           script: |
-            docker pull ${{ secrets.DOCKER_USERNAME }}/sejongmate:latest
+            docker pull ${{ secrets.DOCKER_USERNAME }}/vikrant:latest
             docker stop $(docker ps -a -q)
-            docker run -d --log-driver=syslog -p 8080:8080 ${{ secrets.DOCKER_USERNAME }}/vikrant:latest
+            docker run -d --log-driver=syslog -p 8076:8076 ${{ secrets.DOCKER_USERNAME }}/vikrant:latest
             docker rm $(docker ps --filter 'status=exited' -a -q)
             docker image prune -a -f
